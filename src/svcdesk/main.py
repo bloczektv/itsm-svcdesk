@@ -5,11 +5,11 @@
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Query, Request
+from fastapi import Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from . import store
+from . import dora, store, ticket_events
 from .clock import resolve_now
 from .exceptions import ApiError, NotFound
 from .models import Ticket, TicketCreate
@@ -124,3 +124,13 @@ def close_ticket(ticket_id: str, request: Request) -> dict:
 @app.post("/tickets/{ticket_id}/reopen")
 def reopen_ticket(ticket_id: str, request: Request) -> dict:
     return _act(ticket_id, "reopen", request)
+
+
+@app.post("/dora/metrics")
+def dora_metrics(payload: dict = Body(...)) -> dict:
+    return dora.compute_metrics(payload)
+
+
+@app.get("/dora/ticket-events")
+def dora_ticket_events() -> list:
+    return ticket_events.build_stream()
