@@ -7,9 +7,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import Body, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
-from . import dora, store, ticket_events
+from . import dora, kb, metrics, store, ticket_events
 from .clock import resolve_now
 from .exceptions import ApiError, NotFound
 from .models import Ticket, TicketCreate
@@ -23,9 +23,11 @@ from .timeutil import fmt_instant
 async def lifespan(app: FastAPI):
     store.init_db()
     yield
+    await kb.close()
 
 
 app = FastAPI(title="svcdesk", lifespan=lifespan)
+app.add_middleware(metrics.RequestMetricsMiddleware)
 
 
 @app.exception_handler(ApiError)
@@ -134,3 +136,13 @@ def dora_metrics(payload: dict = Body(...)) -> dict:
 @app.get("/dora/ticket-events")
 def dora_ticket_events() -> list:
     return ticket_events.build_stream()
+
+
+@app.get("/kb/search")
+async def kb_search(q: str | None = Query(default=None)) -> dict:
+    return await kb.search(kb.validate_query(q))
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics() -> Response:
+    return Response(content=metrics.render_metrics(), media_type=metrics.CONTENT_TYPE)

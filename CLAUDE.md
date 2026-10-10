@@ -19,8 +19,9 @@ documents are the source of truth, never this file or any assumption made from p
 - **`DECISIONS.md` must match the running service.** The three declared values (C1, C2, C3) are checked
   against what `itsmlab verify 1` actually observes (`L1-CORE-4`); if they ever diverge, fix the code or
   the declaration, never leave them inconsistent.
-- **No network at container runtime, no bind mounts.** Every dependency is installed at build time;
-  `docker-compose.yml` uses only named volumes.
+- **No network at container runtime, no bind mounts on `svcdesk` or `kb-index`.** Every dependency is installed
+  at build time; those two services use only named volumes. Since Lab 3 the `prometheus` and `grafana` services
+  (profile `observability`, never started by the checker) bind-mount their configuration, which is allowed.
 - **The checker is the ground truth.** Run `./itsmlab.ps1 verify 1` after any change under `src/` or
   `DECISIONS.md`; do not trust a change by inspection alone.
 - **Every source and spec file carries the `ai-generated:` disclosure header** in its first ten lines.

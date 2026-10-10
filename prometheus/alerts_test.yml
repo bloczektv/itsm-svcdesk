@@ -1,0 +1,74 @@
+# ai-generated: 70% - Claude Code wrote the tests and found the edges with a promtool scan; I reviewed the inputs and the edges
+# prometheus/alerts_test.yml - promtool unit tests of alerts.yml (MONITORING-SPEC.md M-20, M-21). From the repository root:
+#   docker run --rm -v "${PWD}/prometheus:/p" -w /p --entrypoint promtool prom/prometheus:v3.15.0 test rules alerts_test.yml
+#
+# Every declared alert has both edges, which kill the four mutants of M-21:
+#   not firing one evaluation before the first firing one  -> kills `for - 5m` and `threshold / 1.5` (they fire earlier)
+#   firing at the first firing evaluation                  -> kills `for + 5m` and `threshold x 1.5` (they fire later)
+# The first firing evaluation was found with promtool itself (a scan asserting "not firing" at every minute), not by
+# hand: rate() extrapolates at the edges of its range.
+#
+# Traffic: 10 requests per second on /kb/search (600 per minute), healthy long enough to fill the long window, then
+# a burn at twice the alert's burn rate (bad share 2 x B x (1 - 0.99)), and 10 per second of 200s on /tickets/{id}
+# that a rule without a route filter would count.
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  # KbSearchErrorsBurnFast: burn 14.4, 1h / 5m, for 2m. Healthy for 70 minutes, then 30 % of requests fail
+  # (180 of 600 per minute, about 2 x 14.4 %). The 1h ratio crosses 14.4 % at 99m, pending from then; firing at 101m.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="200"}'
+        values: '0+600x70 42420+420x59'
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="502"}'
+        values: '0x70 180+180x59'
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/tickets/{id}", http_response_status_code="200"}'
+        values: '0+600x129'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: KbSearchErrorsBurnFast
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: KbSearchErrorsBurnFast
+        exp_alerts: []
+      - eval_time: 101m
+        alertname: KbSearchErrorsBurnFast
+        exp_alerts:
+          - exp_labels:
+              service: svcdesk
+              slo: availability
+              severity: P1
+            exp_annotations:
+              summary: "/kb/search fails over 14.4 % of requests (1h and 5m): the 28-day error budget is gone in under 2 days"
+              description: "Check kb-index (GET /healthz, /stats) and the last svcdesk deploy; a 502 upstream_unavailable means kb-index failed or timed out."
+
+  # KbSearchErrorsBurnSlow: burn 6, 6h / 30m, for 5m. Healthy for 370 minutes, then 12 % of requests fail
+  # (72 of 600 per minute, 2 x 6 %). The 6h ratio crosses 6 % at 550m, pending from then; firing at 555m.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="200"}'
+        values: '0+600x370 222528+528x299'
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/kb/search", http_response_status_code="502"}'
+        values: '0x370 72+72x299'
+      - series: 'http_server_request_duration_seconds_count{job="svcdesk", instance="svcdesk:8080", http_request_method="GET", http_route="/tickets/{id}", http_response_status_code="200"}'
+        values: '0+600x669'
+    alert_rule_test:
+      - eval_time: 370m
+        alertname: KbSearchErrorsBurnSlow
+        exp_alerts: []
+      - eval_time: 554m
+        alertname: KbSearchErrorsBurnSlow
+        exp_alerts: []
+      - eval_time: 555m
+        alertname: KbSearchErrorsBurnSlow
+        exp_alerts:
+          - exp_labels:
+              service: svcdesk
+              slo: availability
+              severity: P2
+            exp_annotations:
+              summary: "/kb/search fails over 6 % of requests (6h and 30m): the 28-day error budget is gone in under 5 days"
+              description: "A slow leak, not an outage: look at kb-index's error rate and recent svcdesk changes in working hours."

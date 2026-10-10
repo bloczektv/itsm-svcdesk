@@ -1,0 +1,53 @@
+# ai-generated: 70% - Claude Code wrote the rules from the SRE Workbook pattern and slo.md; I chose burn rates, windows and severities
+# prometheus/alerts.yml - SLO alerts for GET /kb/search (MONITORING-SPEC.md M-17 to M-21), declared in slo.md.
+#
+# Availability SLI, objective 0.99 over 28d. Multiwindow, multi-burn-rate (SRE Workbook, chapter 5):
+#   KbSearchErrorsBurnFast  burn 14.4, 1h and 5m, P1 (pages)
+#   KbSearchErrorsBurnSlow  burn 6,    6h and 30m, P2 (chat)
+# Every threshold is a constant in the alert's own expr (M-18): burn rate x (1 - objective).
+groups:
+  - name: svcdesk-slo
+    rules:
+      - alert: KbSearchErrorsBurnFast
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search", http_response_status_code=~"5.."}[1h]))
+              /
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search"}[1h]))
+          ) > 14.4 * (1 - 0.99)
+          and
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search", http_response_status_code=~"5.."}[5m]))
+              /
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search"}[5m]))
+          ) > 14.4 * (1 - 0.99)
+        for: 2m
+        labels:
+          service: svcdesk
+          slo: availability
+          severity: P1
+        annotations:
+          summary: "/kb/search fails over 14.4 % of requests (1h and 5m): the 28-day error budget is gone in under 2 days"
+          description: "Check kb-index (GET /healthz, /stats) and the last svcdesk deploy; a 502 upstream_unavailable means kb-index failed or timed out."
+
+      - alert: KbSearchErrorsBurnSlow
+        expr: |
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search", http_response_status_code=~"5.."}[6h]))
+              /
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search"}[6h]))
+          ) > 6 * (1 - 0.99)
+          and
+          (
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search", http_response_status_code=~"5.."}[30m]))
+              /
+            sum(rate(http_server_request_duration_seconds_count{job="svcdesk", http_route="/kb/search"}[30m]))
+          ) > 6 * (1 - 0.99)
+        for: 5m
+        labels:
+          service: svcdesk
+          slo: availability
+          severity: P2
+        annotations:
+          summary: "/kb/search fails over 6 % of requests (6h and 30m): the 28-day error budget is gone in under 5 days"
+          description: "A slow leak, not an outage: look at kb-index's error rate and recent svcdesk changes in working hours."
