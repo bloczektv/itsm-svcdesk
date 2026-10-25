@@ -1,0 +1,38 @@
+# ai-generated: 70% - Claude Code filled the course template's routes and inhibit rule; I chose P1 to pager, P2/P3 to chat and the system label
+# alertmanager/alertmanager.yml - the routing tree (INCIDENT-SPEC.md I-04 to I-08; checks L4-CORE-2.04 to 2.08).
+# P1 pages the on-call (receiver pager); P2 and P3 go to chat and never to the pager. The root receiver is chat, so an
+# alert without a known severity is seen but pages no one.
+#
+# Inhibition: while a shop page (P1, system="shop") fires, the shop's P2 and P3 alerts of the same system are muted -
+# the on-call is already working the incident, and the warnings are its consequences. `equal: [system]` keeps it to
+# one system: svcdesk's alerts (service="svcdesk", no system label) are never muted by a shop page, and neither are
+# alerts of another system. alertmanager/routing-tests.yml proves the rule in both directions (I-08).
+global:
+  resolve_timeout: 5m
+route:
+  receiver: chat                  # the root: every alert enters here, and one that matches no child ends here
+  group_by: [alertname, service]
+  group_wait: 10s                 # the first notification of a new group waits this long: it is part of your MTTA
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="P1"']
+      receiver: pager
+    - matchers: ['severity=~"P2|P3"']
+      receiver: chat
+receivers:
+  - name: pager                   # the on-call's phone: http://localhost:18091 shows what reached it
+    webhook_configs:
+      - url: http://pager:8080/hook/pager
+        send_resolved: true
+  - name: chat
+    webhook_configs:
+      - url: http://pager:8080/hook/chat
+        send_resolved: true
+inhibit_rules:
+  - source_matchers:
+      - 'severity="P1"'
+      - 'system="shop"'
+    target_matchers:
+      - 'severity=~"P2|P3"'
+    equal: [system]

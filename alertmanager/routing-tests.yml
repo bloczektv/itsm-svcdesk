@@ -1,0 +1,33 @@
+# ai-generated: 70% - Claude Code wrote the cases from my alert rules; I checked each receiver list against amtool
+# alertmanager/routing-tests.yml - the cases that prove the routing tree (INCIDENT-SPEC.md I-06 to I-08; checks
+# L4-CORE-2.06 to 2.08). Every label set is a real rule's static labels plus its alertname
+# (prometheus/demo-alerts.yml and Lab 3's prometheus/alerts.yml).
+routes:
+  - labels: {alertname: CheckoutErrorRate, service: checkout, severity: P1, system: shop}
+    receivers: [pager]
+  - labels: {alertname: CheckoutLatencyP99, service: checkout, severity: P1, system: shop}
+    receivers: [pager]
+  - labels: {alertname: FrontendLatencyP99, service: frontend, severity: P2, system: shop}
+    receivers: [chat]
+  - labels: {alertname: ShopServiceErrors, service: shop, severity: P3, system: shop}
+    receivers: [chat]
+  - labels: {alertname: KbSearchErrorsBurnFast, service: svcdesk, slo: availability, severity: P1}
+    receivers: [pager]
+  - labels: {alertname: KbSearchErrorsBurnSlow, service: svcdesk, slo: availability, severity: P2}
+    receivers: [chat]
+inhibitions:
+  # The I-08 pair: same source, targets differing only in `system`, the label the rule lists in `equal`.
+  - source: {alertname: CheckoutErrorRate, service: checkout, severity: P1, system: shop}
+    target: {alertname: FrontendLatencyP99, service: frontend, severity: P2, system: shop}
+    inhibited: true
+  - source: {alertname: CheckoutErrorRate, service: checkout, severity: P1, system: shop}
+    target: {alertname: FrontendLatencyP99, service: frontend, severity: P2, system: other}
+    inhibited: false
+  # A shop page mutes the shop's P3 cause hints too.
+  - source: {alertname: CheckoutLatencyP99, service: checkout, severity: P1, system: shop}
+    target: {alertname: ShopServiceErrors, service: shop, severity: P3, system: shop}
+    inhibited: true
+  # svcdesk's own P2 carries no system label: a shop page never mutes it.
+  - source: {alertname: CheckoutErrorRate, service: checkout, severity: P1, system: shop}
+    target: {alertname: KbSearchErrorsBurnSlow, service: svcdesk, slo: availability, severity: P2}
+    inhibited: false

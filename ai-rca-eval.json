@@ -1,0 +1,50 @@
+{
+  "investigator": {
+    "agent": "course agent loop agent.py",
+    "model": "gemini-3.5-flash-lite",
+    "mcp_server": "prom_mcp.py (mcp 2.2.0)",
+    "transcript": "ai-rca/transcript.md"
+  },
+  "hypotheses": [
+    {
+      "id": "H1",
+      "hypothesis": "The checkout service experienced errors during the incident window due to failed calls to the product catalog service",
+      "component": "checkout",
+      "predicts": "sum(rate(traces_span_metrics_calls_total{service_name=\"checkout\",span_kind=\"SPAN_KIND_CLIENT\",span_name=\"oteldemo.ProductCatalogService/GetProduct\",status_code=\"STATUS_CODE_ERROR\"}[5m])) > 0.003",
+      "at": "2026-10-12T07:11:00Z",
+      "result": true,
+      "verdict": "correct",
+      "evidence": "checkout's outgoing GetProduct calls to product-catalog failed at 0.0082/s at 07:11, the same rate as its failing PlaceOrder (6 % of orders); nothing at the baseline 07:00:45. It is checkout's only failing client call, so the failed orders are explained by the catalog calls. Run 1; the alert (ShopCheckoutErrors) named checkout, the agent added the downstream cause."
+    },
+    {
+      "id": "H2",
+      "hypothesis": "The `product-catalog` service itself was returning errors on `oteldemo.ProductCatalogService/GetProduct` spans, which propagated up to the checkout and frontend services",
+      "component": "product-catalog",
+      "predicts": "sum(rate(traces_span_metrics_calls_total{service_name=\"product-catalog\",span_name=\"oteldemo.ProductCatalogService/GetProduct\",span_kind=\"SPAN_KIND_SERVER\",status_code=\"STATUS_CODE_ERROR\"}[5m])) > 0.02",
+      "at": "2026-10-12T07:11:00Z",
+      "result": true,
+      "verdict": "correct",
+      "evidence": "product-catalog answered 0.149 failed GetProduct/s at 07:11 (8 % of its 1.87 GetProduct/s); nothing at the baseline 07:00:45. This goes beyond the alerts: ShopServiceErrors listed product-catalog among four services, the agent singled it out as the origin. It is one of three faults; the agent never looked at ad's latency or recommendation's behaviour."
+    },
+    {
+      "id": "H3",
+      "hypothesis": "**`frontend`**, **`frontend-proxy`**, **`product-catalog`**, **`checkout`**, and the **`load-generator`** experienced error spikes starting around `07:05Z` / `07:09Z`.",
+      "component": "frontend",
+      "predicts": "(sum(rate(traces_span_metrics_calls_total{service_name=\"frontend\",span_kind=\"SPAN_KIND_SERVER\",status_code=\"STATUS_CODE_ERROR\"}[5m])) > 0.05) and on() (sum(rate(traces_span_metrics_calls_total{service_name=\"load-generator\",status_code=\"STATUS_CODE_ERROR\"}[5m])) > 1.5 * sum(rate(traces_span_metrics_calls_total{service_name=\"load-generator\",status_code=\"STATUS_CODE_ERROR\"}[5m] offset 10m)))",
+      "at": "2026-10-12T07:11:00Z",
+      "result": true,
+      "verdict": "correct",
+      "evidence": "frontend answered 0.29 failed requests/s at 07:11 (none at the baseline), and the load generator's failed calls rose from 0.12/s ten minutes earlier to 0.30/s, so both ends of the list really spiked; product-catalog and checkout are H2 and H1. Run 2. The list largely repeats the four services of the ShopServiceErrors alert; the load generator is the agent's own addition."
+    },
+    {
+      "id": "H4",
+      "hypothesis": "Before `07:05Z`, the error rate across all services was essentially zero (`0`).",
+      "component": null,
+      "predicts": "sum(rate(traces_span_metrics_calls_total{status_code=\"STATUS_CODE_ERROR\"}[5m] offset 7m)) < 0.01",
+      "at": "2026-10-12T07:11:00Z",
+      "result": false,
+      "verdict": "hallucinated",
+      "evidence": "Evaluated at 07:11 with offset 7m, the window is 06:59-07:04, before the onset. The shop then failed 0.158 calls/s, all of them the load generator's own client calls (the healthy shop's known noise), so 'essentially zero across all services' is contradicted. The agent read its 1-minute-window queries, which return nothing for metrics pushed once a minute."
+    }
+  ]
+}

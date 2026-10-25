@@ -1,0 +1,76 @@
+# ai-generated: 80% - Claude Code wrote the rules and tuned the thresholds on the lab4-rec-3 recording; I chose the symptoms, severities and labels
+# prometheus/demo-alerts.yml - symptom alerts on the shop (INCIDENT-SPEC.md I-01, I-02, I-05; checks L4-CORE-2.01,
+# 2.02, 2.05). The shop's metrics are span metrics pushed once a minute, so every window is 5 minutes and only SERVER
+# spans count (the load generator's own client calls fail on the healthy shop). Durations are in milliseconds.
+#
+# One group on purpose: rules of one group share an evaluation timestamp, so when a page and a warning start together
+# the page (P1) is the detecting alert (I-12). Every rule carries system="shop", the label the inhibit rule in
+# alertmanager/alertmanager.yml lists in `equal`.
+#
+# Thresholds, checked on the recording lab4-rec-3 (baseline 06:55-07:05Z, fault from 07:05:45Z):
+#   CheckoutErrorRate   baseline 0 errors; fault 6-10 % of PlaceOrder failing             -> 5 %
+#   CheckoutLatencyP99  baseline p99 ~50 ms; intlShippingSlowdown adds 5-10 s per order    -> 3000 ms
+#   FrontendLatencyP99  baseline p99 <= 48 ms; fault 700-900 ms                           -> 500 ms
+#   ShopServiceErrors   baseline <= 0.004 errors/s per service; fault up to 0.29/s       -> 0.02/s
+groups:
+  - name: shop-symptoms
+    rules:
+      # Page: orders fail. Every fault draw fails or slows checkout (INCIDENT-SPEC.md 2.2).
+      - alert: CheckoutErrorRate
+        expr: |
+          sum(rate(traces_span_metrics_calls_total{service_name="checkout", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m]))
+          /
+          sum(rate(traces_span_metrics_calls_total{service_name="checkout", span_kind="SPAN_KIND_SERVER"}[5m]))
+          > 0.05
+        for: 1m
+        labels:
+          service: checkout
+          severity: P1
+          system: shop
+        annotations:
+          summary: "More than 5 % of checkout's PlaceOrder requests fail (5 min)"
+          description: "Users cannot place orders. Look at checkout's downstream calls (payment, product-catalog) and at what changed recently."
+
+      # Page: orders are slow. Covers the draws whose only checkout symptom is latency (intlShippingSlowdown).
+      - alert: CheckoutLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name="checkout", span_kind="SPAN_KIND_SERVER"}[5m]))
+          ) > 3000
+        for: 1m
+        labels:
+          service: checkout
+          severity: P1
+          system: shop
+        annotations:
+          summary: "Checkout p99 above 3 s (5 min)"
+          description: "Orders take seconds to place. Look at shipping, email and product-catalog latency."
+
+      # Chat: the storefront is slow for browsing users, not yet an order failure.
+      - alert: FrontendLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(traces_span_metrics_duration_milliseconds_bucket{service_name="frontend", span_kind="SPAN_KIND_SERVER"}[5m]))
+          ) > 500
+        for: 2m
+        labels:
+          service: frontend
+          severity: P2
+          system: shop
+        annotations:
+          summary: "Frontend p99 above 500 ms (5 min)"
+          description: "Pages are slow. Check ad, recommendation and product-catalog latency behind the frontend."
+
+      # Chat: which service answers its callers with errors - a cause hint for the on-call, one alert per service.
+      - alert: ShopServiceErrors
+        expr: |
+          sum by (service_name) (rate(traces_span_metrics_calls_total{span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m]))
+          > 0.02
+        for: 2m
+        labels:
+          service: shop
+          severity: P3
+          system: shop
+        annotations:
+          summary: "{{ $labels.service_name }} answers more than 0.02 errors/s (5 min)"
+          description: "A cause hint, not a page: the service named in service_name fails requests of its callers."
