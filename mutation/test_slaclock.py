@@ -202,6 +202,9 @@ def test_window_clipping_before_open_and_after_close():
 def test_weekend_and_overnight_are_skipped():
     assert sc.business_minutes_between(at(20, 15, 0), at(23, 9, 0)) == 120  # Fri 15:00 to Mon 09:00
     assert sc.business_minutes_between(at(16, 15, 0), at(17, 9, 0)) == 120
+    assert sc.business_minutes_between(at(16, 17, 0), at(17, 9, 0)) == 60   # Monday after closing adds nothing
+    assert sc.business_minutes_between(at(21, 9, 0), at(23, 9, 0)) == 60    # Saturday start
+    assert sc.business_minutes_between(at(16, 8, 0), at(23, 8, 0)) == 5 * 480
 
 
 def test_seconds_are_ignored():

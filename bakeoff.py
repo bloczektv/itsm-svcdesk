@@ -245,11 +245,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--labels", required=True, help="the labels file (P-14)")
     parser.add_argument("sarif", nargs="+", help="SARIF 2.1.0 files")
     args = parser.parse_args(argv)
-    with open(args.labels, encoding="utf-8") as fh:
+    with open(args.labels, encoding="utf-8-sig") as fh:
         labels = json.load(fh)
     documents = []
     for path in args.sarif:
-        with open(path, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8-sig") as fh:  # -sig: a byte-order mark is not an error
             documents.append(json.load(fh))
     json.dump(confusion_matrix(labels, documents), sys.stdout, indent=2)
     sys.stdout.write("\n")
