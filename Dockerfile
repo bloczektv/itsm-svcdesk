@@ -16,8 +16,10 @@ RUN pip install --no-cache-dir -r /app/requirements.txt && pip uninstall -y pip
 COPY src/ /app/src/
 
 # The SQLite file goes to /data (a named volume in docker-compose.yml), so tickets survive a restart.
-RUN mkdir -p /data
+# Lab 5 (Semgrep missing-user): run as an unprivileged user that owns /data, never as root.
+RUN useradd --system --uid 10001 --no-create-home svcdesk && mkdir -p /data && chown svcdesk /data
 ENV SVCDESK_DB=/data/svcdesk.db
+USER svcdesk
 
 EXPOSE 8080
 CMD ["uvicorn", "svcdesk.main:app", "--app-dir", "/app/src", "--host", "0.0.0.0", "--port", "8080"]
