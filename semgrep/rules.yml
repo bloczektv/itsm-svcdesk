@@ -1,0 +1,22 @@
+# ai-generated: 70% - Claude Code drafted both rules from store.py and kb.py; I picked the cases and checked each finding
+rules:
+  - id: svcdesk-sql-not-literal
+    languages: [python]
+    severity: WARNING
+    message: SQL passed to execute() is not a literal; keep the statement fixed and bind values with ? placeholders
+    patterns:
+      - pattern: $CONN.execute($SQL, ...)
+      - pattern-not: $CONN.execute("...", ...)
+    metadata:
+      cwe: "CWE-89: SQL injection"
+
+  - id: svcdesk-upstream-url-fstring
+    languages: [python]
+    severity: WARNING
+    message: outbound HTTP call builds its URL with an f-string; a request value must never reach the host or path
+    patterns:
+      - pattern-either:
+          - pattern: $CLIENT.get(f"...", ...)
+          - pattern: $CLIENT.post(f"...", ...)
+    metadata:
+      cwe: "CWE-918: server-side request forgery"
