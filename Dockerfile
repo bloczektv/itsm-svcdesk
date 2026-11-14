@@ -7,7 +7,7 @@ WORKDIR /app
 
 # Dependencies first, so Docker caches this layer while the code changes.
 COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt && pip uninstall -y pip
 
 # The implementation lives under src/svcdesk/.
 COPY src/ /app/src/
