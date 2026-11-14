@@ -3,6 +3,9 @@
 # no network once the image is built) and listen on port 8080 inside the container.
 FROM python:3.13-slim
 
+# Lab 5: pick up the fixed zlib1g (CVE-2026-76844, CVE-2026-85091) and other base-image fixes.
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Dependencies first, so Docker caches this layer while the code changes.
